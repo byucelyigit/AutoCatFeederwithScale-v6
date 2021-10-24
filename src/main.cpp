@@ -4,25 +4,13 @@
 #include <RtcDS1307.h> //oled
 #include <Wire.h> 
 
-
-
-
-
-
-
-
-
-
-
-
-
 // wiring
 #define LOADCELL_DOUT_PIN  2
 #define LOADCELL_SCK_PIN   3
 #define BUTTON4            4 //limitter
-#define BUTTON1            5
-#define BUTTON2            6
-#define BUTTON3            7
+#define BUTTON1            5 //
+#define BUTTON2            6 //
+#define BUTTON3            7 //function mode, button mode change
 #define MOTOR1             8
 #define MOTOR2             9
 #define STEP1             10
@@ -37,9 +25,10 @@
 
 #define ModeDoNothing              0
 #define ModeMotorRun               1
-#define ModeOpenLid                2
-#define ModeCloseLid               3
-#define ModeTimeout                4 
+#define ModeMotorRunAndServe       2
+#define ModeOpenLid                3
+#define ModeCloseLid               4
+#define ModeTimeout                5 
 
 
 #define ButtonStatusOpenClose      0
@@ -54,17 +43,21 @@ bool feedDoorOpen                = false;
 long scaleGetUnits               =     0;
 
 int mode = ModeDoNothing; 
+int buttonStatus = ButtonStatusManuelStart;
 int count = 0;
 int portionWeightgr = 12;
 long oldTime = 0;
 long oldScale = 0;
 int completedHour = -1;
-                  // 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}
-int cmdAmount[24] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,12, 0, 0, 0,12, 0, 0,24};
-int cmd[24] =       {0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 1};    //0 do nothing, 1 prepare, 2 open, 3 prepare and open
+      // index ->    0, 1, ...                                                     ..,22,23
+      // clock ->    0, 1, 2, 3, 4, 5, 6, 7, 8, 9,10,11,12,13,14,15,16,17,18,19,20,21,22,23}
+int cmdAmount[24] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,12, 0, 0, 0,12, 0, 0,24, 0};
+int cmd[24] =       {0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 1, 0};    //0 do nothing, 1 prepare, 2 open, 3 prepare and open
 int nextPointer = 0;
 String status = "";
-char *statusString[] = {"Ready", "Prep", "Ready", "Ready", "TIMEOUT" };
+char *statusString[] = {"Ready", "Prep", "Prp&Srv", "Ready", "Ready", "TIMEOUT" };
+char *nextOperationString[] = {"p", "o", "po"};
+char *buttonModeString[] = {"AS", "CS", "OC", "MC"};
 
 
 CheapStepper stepper (STEP1,STEP2,STEP3,STEP4);  
@@ -75,13 +68,12 @@ HX711 scale;
 
 int CalculateNextPointer(int currentHour) 
 {
-  int index = (currentHour) % 24;
-
-  for(int i = index; i<24; i++)
+  for(int i = 1; i<24; i++)
   {
-    if(cmd[i]>0)
+    int mod = (currentHour + i) % 24;
+    if(cmd[mod]>0)
     {
-      return i;
+      return mod;
     }
   }
 }
@@ -96,15 +88,15 @@ void resetStepperPins()
 
 #define countof(a) (sizeof(a) / sizeof(a[0]))
 
-void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String statusStr, long weight, int mode)
+void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String statusStr, long weight, String nextOperation, String btnModeString)
 {
     char datestring[10];
     char alarmstring[10];
     char weightString[4];
-    char modeString[2];
+
     int x,y;
     x = 12;
-    y = 23;
+    y = 20;
 
     snprintf_P(datestring, 
             countof(datestring),
@@ -112,7 +104,7 @@ void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String st
             dt.Hour(),
             dt.Minute(),
             dt.Second() );
-    Serial.print(datestring);
+    //Serial.print(datestring);
 
     snprintf_P(alarmstring, 
             countof(alarmstring),
@@ -121,10 +113,19 @@ void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String st
             alrm.Minute());
 
 
-  int lenStatusString = statusStr.length();
-  char statusstring[lenStatusString+1];
-    
-  statusStr.toCharArray(statusstring, lenStatusString+1);
+  int lenString = statusStr.length();
+  char statusstring[lenString+1];
+  statusStr.toCharArray(statusstring, lenString+1);
+
+  lenString = nextOperation.length();
+  char nOpstring[lenString+1];
+  nextOperation.toCharArray(nOpstring, lenString+1);
+
+  lenString = btnModeString.length();
+  char nbuttonModeString[lenString+1];
+  btnModeString.toCharArray(nbuttonModeString, lenString+1);
+
+
 
     snprintf_P(weightString, 
             countof(weightString),
@@ -133,23 +134,19 @@ void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String st
 
 
 
-    snprintf_P(modeString, 
-            countof(modeString),
-            PSTR("%01u"),
-            mode);            
-
-
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_9x15B_mf);
     u8g2.drawStr(x, y, statusstring);
     u8g2.drawStr(x,y+20,datestring);
+    u8g2.drawStr(x+75, y+20, nbuttonModeString);    
     u8g2.setFont(u8g2_font_9x15B_mf);
     u8g2.drawStr(x,y+36,alarmstring);
+    u8g2.drawStr(x+75,y+36,nOpstring);    
     u8g2.setFont(u8g2_font_9x15_mf);
-    u8g2.drawStr(x+60,y,weightString);
+    u8g2.drawStr(x+65,y,weightString);
     u8g2.setFont(u8g2_font_9x15_mf);
-    //u8g2.drawStr(x+85,y,modeString);
+
 
 
     //u8g2.drawFrame(0,0,u8g2.getDisplayWidth(),u8g2.getDisplayHeight() );
@@ -182,8 +179,8 @@ void setup() {
   
   Rtc.Begin();
 
-  //RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
-  RtcDateTime compiled = RtcDateTime(__DATE__, "04:59:50");
+  RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+  //RtcDateTime compiled = RtcDateTime(__DATE__, "15:59:50");
   Rtc.SetDateTime(compiled);
   //printDateTime(compiled);
   Serial.println();
@@ -239,6 +236,44 @@ void setup() {
   // just clear them to your needed state
   Rtc.SetSquareWavePin(DS1307SquareWaveOut_Low); 
   Serial.print("setup finished. ");
+
+
+  //lid setup
+  if(digitalRead(BUTTON4) == HIGH)
+  {
+    mode = ModeCloseLid;
+  }
+  else
+  {
+    //move until button4 becomes high
+      for (int s=0; s<8000; s++){
+        stepper.step(moveClockwise);
+        int stopPinState = digitalRead(BUTTON4);
+        if(stopPinState == HIGH)
+        {
+          resetStepperPins();
+          mode = ModeCloseLid;
+          break;
+        }
+    }
+  }
+}
+
+void printRandom()
+{
+  int mode = 0;
+  char modeString[2];
+  int x,y;
+    x = random(12, 120);
+    y = random(16, 58);
+    snprintf_P(modeString, 
+            countof(modeString),
+            PSTR("%01u"),
+            mode);             
+              u8g2.firstPage();
+  do {   
+      u8g2.drawStr(x,y,modeString);
+      } while ( u8g2.nextPage() );   
 }
 
 void loop() {
@@ -267,8 +302,8 @@ void loop() {
     //scaleGetUnits = scale.get_units();
     
     scaleGetUnits = -scale.get_units();
-    Serial.print("HX711 reading: ");
-    Serial.println(scaleGetUnits,1);
+    //Serial.print("HX711 reading: ");
+    //Serial.println(scaleGetUnits,1);
     //Serial.println(reading/1000);
   } else {
     Serial.println("HX711 not found.");
@@ -276,6 +311,22 @@ void loop() {
 //DrawToOled(2, 30, "test");
 //count = count + 1;
 
+
+  if(digitalRead(BUTTON3) == HIGH)
+  {
+    //change function mode
+    Serial.print("button3");
+    buttonStatus = buttonStatus + 1;
+    if(buttonStatus == 4)
+    {
+      buttonStatus = 0;
+    }
+  }
+
+
+
+if(buttonStatus == ButtonStatusManuelStart)
+{
   if(digitalRead(BUTTON1) == HIGH)
   {
     Serial.print("button1");
@@ -293,13 +344,6 @@ void loop() {
 
   if(digitalRead(BUTTON2) == HIGH)
   {
-    Serial.print("button2");
-    //scale.set_scale(calibration_factor);
-    //scale.tare();
-  }
-
-  if(digitalRead(BUTTON3) == HIGH)
-  {
     //----------------------------------------------------------
     mode = ModeMotorRun;
     oldTime = millis();
@@ -311,22 +355,29 @@ void loop() {
     digitalWrite(MOTOR2, LOW);
 
   }
+}
+
+
 
   if(digitalRead(BUTTON4) == HIGH)
   {
     Serial.print("button4");
   }
 
-  if(mode == ModeMotorRun)
+  if((mode == ModeMotorRun) || (mode == ModeMotorRunAndServe))
   {
+    Serial.println("mode = ModeMotorRun || mode = ModeMotorRunAndServe");
+    Serial.println(mode);
     //check for the scale for every 5 sec.
     //if scale is equal to porsion or there is no significant change at scale number then stop the motor
     long myTime = millis();
+
     digitalWrite(MOTOR1, HIGH);
     digitalWrite(MOTOR2, LOW);
 
     if(feedDoorOpen)
     {
+      Serial.println("feedDoorOpen -> close it.");
       stepper.move(!moveClockwise, slideDistance);
       feedDoorOpen = false;   
       resetStepperPins();
@@ -336,13 +387,16 @@ void loop() {
     if(myTime - oldTime > LOADCELL_CHANGETIMEOUT)
     {
       //if scale is changing then continue
+      Serial.println("LOADCELL_CHANGETIMEOUT passed.");
       if(scaleGetUnits > oldScale)
       {
+        Serial.println("Weight is increasing.");
         //new scale measure is larger than previous one.
         oldScale = scaleGetUnits;
       }
       else
       {
+        Serial.println("Weight is not changing. Stop motors.");
         digitalWrite(MOTOR1, LOW);
         digitalWrite(MOTOR2, LOW);
         mode = ModeTimeout;
@@ -354,20 +408,28 @@ void loop() {
     scale.wait_ready(wait);
 
     Serial.print(">");
-    if(scaleGetUnits >= portionWeightgr)
+    if((scaleGetUnits >= portionWeightgr) &&  portionWeightgr < 150) //max 150gr. 
     {
+        Serial.println("Target weight.");
         //RtcDateTime now = Rtc.GetDateTime();
         //printTimeAndAlarm(now, RtcDateTime(2000,1, 1, alarmHr, alarmMin, 0), status, scaleGetUnits, mode);
         digitalWrite(MOTOR1, LOW);
         digitalWrite(MOTOR2, LOW);
-        mode = ModeOpenLid;
+        if( mode == ModeMotorRunAndServe)  
+        {  
+          mode = ModeOpenLid; 
+        }
+        else
+        {
+          mode = ModeDoNothing;
+        }
     }
     oldScale = scaleGetUnits;
   }
 
-
-  if(mode == ModeOpenLid)
+  if (mode == ModeOpenLid)
   {
+      Serial.println("mode = ModeOpenLid");
       stepper.move(moveClockwise, slideDistance);
       feedDoorOpen = true;   
       resetStepperPins();
@@ -376,6 +438,7 @@ void loop() {
 
   if(mode == ModeCloseLid)
   {
+       Serial.print("mode = ModeCloseLid");
       stepper.move(!moveClockwise, slideDistance);
       feedDoorOpen = false;   
       mode = ModeDoNothing;
@@ -385,6 +448,7 @@ void loop() {
 
   if(mode == ModeTimeout)
   {
+    Serial.println("mode = ModeTimeout");    
     //if other actions needed. 
     //for example last amount can be writen on oled
     if(!feedDoorOpen)
@@ -396,22 +460,39 @@ void loop() {
   }
 
   RtcDateTime now = Rtc.GetDateTime();
-  int next = CalculateNextPointer(now.Hour());//pointer of next command. to calculate hour value +1  of the pointer.;
-  printTimeAndAlarm(now, RtcDateTime(2000,1, 1,next+1, cmdAmount[next], 0), statusString[mode], scaleGetUnits, mode);
+  int hour = now.Hour();
+  int next = CalculateNextPointer(hour);//pointer of next command. to calculate hour value +1  of the pointer.;
+  printTimeAndAlarm(now, RtcDateTime(2000,1, 1,next, cmdAmount[next], 0), statusString[mode], scaleGetUnits, nextOperationString[cmd[next]-1], buttonModeString[buttonStatus]);
 
-int hour = now.Hour();
-int index = hour - 1;
-if(index == -1)
+if(buttonStatus == ButtonStatusSetTime)
 {
-  index = 23;
+  if(digitalRead(BUTTON1) == HIGH)
+  {
+        int clockMin = now.Minute();
+        clockMin = clockMin + 1;
+        if(clockMin == 60) {clockMin = 0;}
+        RtcDateTime setTime = RtcDateTime(2019, 1, 21, now.Hour(), clockMin, 0);
+        Rtc.SetDateTime(setTime);
+  }
+  if(digitalRead(BUTTON2) == HIGH)
+  {
+        int clockHr = now.Hour();
+        clockHr = clockHr + 1;
+        if(clockHr == 24) { clockHr = 0;}
+        RtcDateTime setTime = RtcDateTime(2019,1,21,clockHr,now.Minute(),0);
+        Rtc.SetDateTime(setTime);  
+  }
 }
+
+
+
 if(hour!=completedHour) // runs once
 {
-  if(cmd[index] = 2)
-  {
-    mode = ModeOpenLid;
-    completedHour = hour;
-  }
+  Serial.println(cmd[hour]);
+  if(cmd[hour] == 1)  {  oldTime = millis(); mode = ModeMotorRun;          }
+  if(cmd[hour] == 2)  {  mode = ModeOpenLid;           }
+  if(cmd[hour] == 3)  {  oldTime = millis(); mode = ModeMotorRunAndServe;  }  
+  completedHour = hour;
 }
 
   
