@@ -489,9 +489,9 @@ if(buttonStatus == ButtonStatusSetTime)
 if(hour!=completedHour) // runs once
 {
   Serial.println(cmd[hour]);
-  if(cmd[hour] == 1)  {  oldTime = millis(); mode = ModeMotorRun;          }
+  if(cmd[hour] == 1)  {  oldTime = millis(); mode = ModeMotorRun;  portionWeightgr = cmdAmount[hour];      }
   if(cmd[hour] == 2)  {  mode = ModeOpenLid;           }
-  if(cmd[hour] == 3)  {  oldTime = millis(); mode = ModeMotorRunAndServe;  }  
+  if(cmd[hour] == 3)  {  oldTime = millis(); mode = ModeMotorRunAndServe; portionWeightgr = cmdAmount[hour]; }  
   completedHour = hour;
 }
 
