@@ -20,7 +20,7 @@
 
 //constants and variables
 
-#define LOADCELL_CHANGETIMEOUT 10000
+#define LOADCELL_CHANGETIMEOUT 15000
 #define slideDistance            500
 
 #define ModeDoNothing              0
@@ -383,10 +383,15 @@ if(buttonStatus == ButtonStatusManuelStart)
       resetStepperPins();
       scale.tare();
     }
+    
+    
     Serial.print("myTime:"); Serial.println(myTime);
     Serial.print("oldTime:"); Serial.println(oldTime);
+    Serial.print("myTime - oldTime:"); Serial.println(myTime - oldTime);
     Serial.print("scaleGetUnits:"); Serial.println(scaleGetUnits);
     Serial.print("oldScale:"); Serial.println(oldScale);
+
+
     if(myTime - oldTime > LOADCELL_CHANGETIMEOUT)
     {
       //if scale is changing then continue
@@ -394,6 +399,8 @@ if(buttonStatus == ButtonStatusManuelStart)
       if(scaleGetUnits > oldScale)
       {
         Serial.println("Weight is increasing.");
+        oldScale = scaleGetUnits;
+        oldTime = myTime;            
         //new scale measure is larger than previous one.
         //oldScale = scaleGetUnits;
       }
@@ -426,8 +433,6 @@ if(buttonStatus == ButtonStatusManuelStart)
           mode = ModeDoNothing;
         }
     }
-    oldScale = scaleGetUnits;
-    oldTime = myTime;    
   }
 
   if (mode == ModeOpenLid)
@@ -436,6 +441,7 @@ if(buttonStatus == ButtonStatusManuelStart)
       stepper.move(moveClockwise, slideDistance);
       feedDoorOpen = true;   
       resetStepperPins();
+      delay(500);//feed discharge time. wait at open positon
       mode = ModeCloseLid;
   }
 
