@@ -36,7 +36,7 @@
 #define ButtonStatusSetAlarm       2
 #define ButtonStatusManuelStart    3
 
-#define calibration_factor       855 //-7050 worked for my 440lb max scale setup
+#define calibration_factor       880 //
 
 bool moveClockwise               =  true;
 bool feedDoorOpen                = false;
@@ -383,7 +383,10 @@ if(buttonStatus == ButtonStatusManuelStart)
       resetStepperPins();
       scale.tare();
     }
-
+    Serial.print("myTime:"); Serial.println(myTime);
+    Serial.print("oldTime:"); Serial.println(oldTime);
+    Serial.print("scaleGetUnits:"); Serial.println(scaleGetUnits);
+    Serial.print("oldScale:"); Serial.println(oldScale);
     if(myTime - oldTime > LOADCELL_CHANGETIMEOUT)
     {
       //if scale is changing then continue
@@ -392,7 +395,7 @@ if(buttonStatus == ButtonStatusManuelStart)
       {
         Serial.println("Weight is increasing.");
         //new scale measure is larger than previous one.
-        oldScale = scaleGetUnits;
+        //oldScale = scaleGetUnits;
       }
       else
       {
@@ -401,7 +404,6 @@ if(buttonStatus == ButtonStatusManuelStart)
         digitalWrite(MOTOR2, LOW);
         mode = ModeTimeout;
       }
-      oldTime = myTime;
     }
 
     long wait = 50;
@@ -425,6 +427,7 @@ if(buttonStatus == ButtonStatusManuelStart)
         }
     }
     oldScale = scaleGetUnits;
+    oldTime = myTime;    
   }
 
   if (mode == ModeOpenLid)
