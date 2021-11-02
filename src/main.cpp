@@ -20,6 +20,7 @@
 
 //constants and variables
 
+#define BLANK_SCREEN_TIME        200
 #define LOADCELL_CHANGETIMEOUT 15000
 #define slideDistance            500
 
@@ -42,6 +43,8 @@ bool moveClockwise               =  true;
 bool feedDoorOpen                = false;
 long scaleGetUnits               =     0;
 
+//bool showScreen = true;
+int screenBlankDelayCount = 0;
 int mode = ModeDoNothing; 
 int buttonStatus = ButtonStatusManuelStart;
 int count = 0;
@@ -181,7 +184,7 @@ void setup() {
 
   RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
   //RtcDateTime compiled = RtcDateTime(__DATE__, "15:59:50");
-  Rtc.SetDateTime(compiled);
+  //Rtc.SetDateTime(compiled);
   //printDateTime(compiled);
   Serial.println();
 
@@ -207,7 +210,7 @@ void setup() {
           // it will also reset the valid flag internally unless the Rtc device is
           // having an issue
 
-          Rtc.SetDateTime(compiled);
+          //Rtc.SetDateTime(compiled);
       }
   }
 
@@ -221,7 +224,7 @@ void setup() {
   if (now < compiled) 
   {
       Serial.println("RTC is older than compile time!  (Updating DateTime)");
-      Rtc.SetDateTime(compiled);
+      //Rtc.SetDateTime(compiled);
   }
   else if (now > compiled) 
   {
@@ -259,21 +262,9 @@ void setup() {
   }
 }
 
-void printRandom()
+void BlankScreen()
 {
-  int mode = 0;
-  char modeString[2];
-  int x,y;
-    x = random(12, 120);
-    y = random(16, 58);
-    snprintf_P(modeString, 
-            countof(modeString),
-            PSTR("%01u"),
-            mode);             
-              u8g2.firstPage();
-  do {   
-      u8g2.drawStr(x,y,modeString);
-      } while ( u8g2.nextPage() );   
+  u8g2.clearDisplay();
 }
 
 void loop() {
@@ -315,6 +306,7 @@ void loop() {
   if(digitalRead(BUTTON3) == HIGH)
   {
     //change function mode
+    screenBlankDelayCount = 0;
     Serial.print("button3");
     buttonStatus = buttonStatus + 1;
     if(buttonStatus == 4)
@@ -470,8 +462,26 @@ if(buttonStatus == ButtonStatusManuelStart)
 
   RtcDateTime now = Rtc.GetDateTime();
   int hour = now.Hour();
+  int minute = now.Minute();
   int next = CalculateNextPointer(hour);//pointer of next command. to calculate hour value +1  of the pointer.;
-  printTimeAndAlarm(now, RtcDateTime(2000,1, 1,next, cmdAmount[next], 0), statusString[mode], scaleGetUnits, nextOperationString[cmd[next]-1], buttonModeString[buttonStatus]);
+
+  if(screenBlankDelayCount<BLANK_SCREEN_TIME)
+  {
+    printTimeAndAlarm(now, RtcDateTime(2000,1, 1,next, cmdAmount[next], 0), statusString[mode], scaleGetUnits, nextOperationString[cmd[next]-1], buttonModeString[buttonStatus]);
+  }
+  else
+  {
+    BlankScreen();
+  }
+
+screenBlankDelayCount = screenBlankDelayCount + 1;
+
+if(screenBlankDelayCount>BLANK_SCREEN_TIME)
+{
+  screenBlankDelayCount = BLANK_SCREEN_TIME;
+}
+
+Serial.println(screenBlankDelayCount);
 
 if(buttonStatus == ButtonStatusSetTime)
 {
@@ -498,10 +508,13 @@ if(buttonStatus == ButtonStatusSetTime)
 if(hour!=completedHour) // runs once
 {
   Serial.println(cmd[hour]);
-  if(cmd[hour] == 1)  {  oldTime = millis(); mode = ModeMotorRun;  portionWeightgr = cmdAmount[hour];      }
-  if(cmd[hour] == 2)  {  mode = ModeOpenLid;           }
-  if(cmd[hour] == 3)  {  oldTime = millis(); mode = ModeMotorRunAndServe; portionWeightgr = cmdAmount[hour]; }  
-  completedHour = hour;
+  if(minute == 0) //Sadece dakika 0 olduğunda işlem yapar. (elektrik gidip geldiğinde her seferinde yem vermez. elektrik kesildiğinde atlayan öğünler atlanmış olur.)
+  {
+    if(cmd[hour] == 1)  {  oldTime = millis(); mode = ModeMotorRun;  portionWeightgr = cmdAmount[hour];      }
+    if(cmd[hour] == 2)  {  mode = ModeOpenLid;           }
+    if(cmd[hour] == 3)  {  oldTime = millis(); mode = ModeMotorRunAndServe; portionWeightgr = cmdAmount[hour]; }  
+    completedHour = hour;
+  }
 }
 
   
