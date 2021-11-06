@@ -39,6 +39,7 @@
 
 #define calibration_factor       880 //
 
+bool warning                     = false;
 bool moveClockwise               =  true;
 bool feedDoorOpen                = false;
 long scaleGetUnits               =     0;
@@ -58,7 +59,7 @@ int cmdAmount[24] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,12, 0, 0, 0,12,
 int cmd[24] =       {0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 3, 0, 0, 1, 0};    //0 do nothing, 1 prepare, 2 open, 3 prepare and open
 int nextPointer = 0;
 String status = "";
-char *statusString[] = {"Ready", "Prep", "Prp&Srv", "Ready", "Ready", "TIMEOUT" };
+char *statusString[] = {"Ready", "Prep", "Prp&Srv", "Ready", "Ready"};
 char *nextOperationString[] = {"p", "o", "po"};
 char *buttonModeString[] = {"AS", "CS", "OC", "MC"};
 
@@ -91,7 +92,7 @@ void resetStepperPins()
 
 #define countof(a) (sizeof(a) / sizeof(a[0]))
 
-void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String statusStr, long weight, String nextOperation, String btnModeString)
+void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String statusStr, long weight, String nextOperation, String btnModeString, bool _warning)
 {
     char datestring[10];
     char alarmstring[10];
@@ -100,6 +101,11 @@ void printTimeAndAlarm(const RtcDateTime& dt, const RtcDateTime& alrm, String st
     int x,y;
     x = 12;
     y = 20;
+
+    if(_warning)
+    {
+      statusStr = "TMOUT";
+    }
 
     snprintf_P(datestring, 
             countof(datestring),
@@ -274,6 +280,7 @@ void StartMotors(int motorMode, int amount)
     oldScale = 0;
     portionWeightgr = amount;
     screenBlankDelayCount = 0;
+    warning = false;
 }
 
 void StopMotors()
@@ -415,6 +422,7 @@ if(buttonStatus == ButtonStatusManuelStart)
       {
         Serial.println("Weight is not changing. Stop motors.");
         StopMotors();
+        warning = true;
         if( mode == ModeMotorRunAndServe)  
         {  
           mode = ModeOpenLid; 
@@ -491,7 +499,7 @@ if(buttonStatus == ButtonStatusManuelStart)
 
   if(screenBlankDelayCount<BLANK_SCREEN_TIME)
   {
-    printTimeAndAlarm(now, RtcDateTime(2000,1, 1,next, cmdAmount[next], 0), statusString[mode], scaleGetUnits, nextOperationString[cmd[next]-1], buttonModeString[buttonStatus]);
+    printTimeAndAlarm(now, RtcDateTime(2000,1, 1,next, cmdAmount[next], 0), statusString[mode], scaleGetUnits, nextOperationString[cmd[next]-1], buttonModeString[buttonStatus], warning);
   }
   else
   {
