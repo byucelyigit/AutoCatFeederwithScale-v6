@@ -20,7 +20,7 @@
 
 //constants and variables
 
-#define BLANK_SCREEN_TIME        200
+#define BLANK_SCREEN_TIME       2000
 #define LOADCELL_CHANGETIMEOUT 15000
 #define slideDistance            500
 
@@ -29,7 +29,7 @@
 #define ModeMotorRunAndServe       2
 #define ModeOpenLid                3
 #define ModeCloseLid               4
-#define ModeTimeout                5 
+/*#define ModeTimeout                5 */
 
 
 #define ButtonStatusOpenClose      0
@@ -267,6 +267,23 @@ void BlankScreen()
   u8g2.clearDisplay();
 }
 
+void StartMotors(int motorMode, int amount)
+{
+    mode = motorMode;
+    oldTime = millis();
+    oldScale = 0;
+    portionWeightgr = amount;
+    screenBlankDelayCount = 0;
+}
+
+void StopMotors()
+{
+    digitalWrite(MOTOR1, LOW);
+    digitalWrite(MOTOR2, LOW);
+
+}
+
+
 void loop() {
 
   //Clock *********************************************
@@ -337,15 +354,12 @@ if(buttonStatus == ButtonStatusManuelStart)
   if(digitalRead(BUTTON2) == HIGH)
   {
     //----------------------------------------------------------
-    mode = ModeMotorRun;
-    oldTime = millis();
+    StartMotors(ModeMotorRun, 12);
     Serial.print("button3");
   }
   else
   {
-    digitalWrite(MOTOR1, LOW);
-    digitalWrite(MOTOR2, LOW);
-
+    StopMotors();
   }
 }
 
@@ -360,8 +374,8 @@ if(buttonStatus == ButtonStatusManuelStart)
   {
     Serial.println("mode = ModeMotorRun || mode = ModeMotorRunAndServe");
     Serial.println(mode);
-    //check for the scale for every 5 sec.
-    //if scale is equal to porsion or there is no significant change at scale number then stop the motor
+
+
     long myTime = millis();
 
     digitalWrite(MOTOR1, HIGH);
@@ -386,6 +400,7 @@ if(buttonStatus == ButtonStatusManuelStart)
 
     if(myTime - oldTime > LOADCELL_CHANGETIMEOUT)
     {
+      //if scale is equal to porsion or there is no significant change at scale number then stop the motor      
       //if scale is changing then continue
       Serial.println("LOADCELL_CHANGETIMEOUT passed.");
       if(scaleGetUnits > oldScale)
@@ -399,9 +414,15 @@ if(buttonStatus == ButtonStatusManuelStart)
       else
       {
         Serial.println("Weight is not changing. Stop motors.");
-        digitalWrite(MOTOR1, LOW);
-        digitalWrite(MOTOR2, LOW);
-        mode = ModeTimeout;
+        StopMotors();
+        if( mode == ModeMotorRunAndServe)  
+        {  
+          mode = ModeOpenLid; 
+        }
+        else
+        {
+          mode = ModeDoNothing;
+        }        
       }
     }
 
@@ -414,8 +435,7 @@ if(buttonStatus == ButtonStatusManuelStart)
         Serial.println("Target weight.");
         //RtcDateTime now = Rtc.GetDateTime();
         //printTimeAndAlarm(now, RtcDateTime(2000,1, 1, alarmHr, alarmMin, 0), status, scaleGetUnits, mode);
-        digitalWrite(MOTOR1, LOW);
-        digitalWrite(MOTOR2, LOW);
+        StopMotors();
         if( mode == ModeMotorRunAndServe)  
         {  
           mode = ModeOpenLid; 
@@ -435,18 +455,21 @@ if(buttonStatus == ButtonStatusManuelStart)
       resetStepperPins();
       delay(500);//feed discharge time. wait at open positon
       mode = ModeCloseLid;
+      screenBlankDelayCount = 0;
   }
 
   if(mode == ModeCloseLid)
   {
-       Serial.print("mode = ModeCloseLid");
+      Serial.print("mode = ModeCloseLid");
       stepper.move(!moveClockwise, slideDistance);
       feedDoorOpen = false;   
       mode = ModeDoNothing;
       resetStepperPins();
+      delay(1000);//
       scale.tare();
   }
 
+  /*
   if(mode == ModeTimeout)
   {
     Serial.println("mode = ModeTimeout");    
@@ -454,11 +477,12 @@ if(buttonStatus == ButtonStatusManuelStart)
     //for example last amount can be writen on oled
     if(!feedDoorOpen)
     {
-      stepper.move(moveClockwise, slideDistance);
-      feedDoorOpen = true;   
+      //stepper.move(moveClockwise, slideDistance);
+      //feedDoorOpen = true;   
       resetStepperPins();
     }
   }
+  */
 
   RtcDateTime now = Rtc.GetDateTime();
   int hour = now.Hour();
@@ -492,6 +516,7 @@ if(buttonStatus == ButtonStatusSetTime)
         if(clockMin == 60) {clockMin = 0;}
         RtcDateTime setTime = RtcDateTime(2019, 1, 21, now.Hour(), clockMin, 0);
         Rtc.SetDateTime(setTime);
+        screenBlankDelayCount = 0;
   }
   if(digitalRead(BUTTON2) == HIGH)
   {
@@ -500,6 +525,7 @@ if(buttonStatus == ButtonStatusSetTime)
         if(clockHr == 24) { clockHr = 0;}
         RtcDateTime setTime = RtcDateTime(2019,1,21,clockHr,now.Minute(),0);
         Rtc.SetDateTime(setTime);  
+        screenBlankDelayCount = 0;
   }
 }
 
@@ -510,9 +536,9 @@ if(hour!=completedHour) // runs once
   Serial.println(cmd[hour]);
   if(minute == 0) //Sadece dakika 0 olduğunda işlem yapar. (elektrik gidip geldiğinde her seferinde yem vermez. elektrik kesildiğinde atlayan öğünler atlanmış olur.)
   {
-    if(cmd[hour] == 1)  {  oldTime = millis(); mode = ModeMotorRun;  portionWeightgr = cmdAmount[hour];      }
+    if(cmd[hour] == 1)  {  StartMotors(ModeMotorRun, cmdAmount[hour]); }
     if(cmd[hour] == 2)  {  mode = ModeOpenLid;           }
-    if(cmd[hour] == 3)  {  oldTime = millis(); mode = ModeMotorRunAndServe; portionWeightgr = cmdAmount[hour]; }  
+    if(cmd[hour] == 3)  {  StartMotors(ModeMotorRunAndServe, cmdAmount[hour]); }  
     completedHour = hour;
   }
 }
